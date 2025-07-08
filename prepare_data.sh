@@ -14,7 +14,7 @@ if [[ ! -d "${CARS196_ROOT}" ]]; then
 fi
 
 
-CUB_ROOT='data/CUB_200_2011/'
+CUB_ROOT='data/cub200/'
 CUB_DATA='https://data.caltech.edu/records/65de6-vp158/files/CUB_200_2011.tgz'
 
 
