@@ -1,0 +1,11 @@
+__pycache__
+*.pyc
+Training_Results
+wandb
+diva_main.py
+.idea
+.vscode
+TrainingResults/
+tmp.py
+tmp.txt
+exp.sh
