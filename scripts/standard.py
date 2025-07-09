@@ -232,3 +232,24 @@ def main(opt):
 
     with open(LOG.save_path + '/training_summary.txt', 'w') as summary_file:
         summary_file.write(summary_text)
+
+    # Log final best statistics to wandb
+    if hasattr(LOG, 'log_to_wandb'):
+        # Log final best metrics for all sub_loggers
+        for sub_logger in LOG.sub_loggers:
+            LOG.log_best_metrics(sub_logger, step=opt.n_epochs)
+        
+        # Log training summary
+        LOG.log_to_wandb({
+            "Training/total_time_minutes": np.round(full_training_time / 60, 2),
+            "Training/total_epochs": opt.n_epochs,
+        }, step=opt.n_epochs)
+        
+        # Log final summary text
+        if hasattr(LOG, 'wandb_run') and LOG.wandb_run is not None:
+            try:
+                import wandb
+                wandb.run.summary["training_summary"] = summary_text
+                print("Final statistics logged to wandb")
+            except ImportError:
+                pass

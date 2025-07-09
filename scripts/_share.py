@@ -189,6 +189,24 @@ def train_one_epoch(opt, epoch, scheduler, train_data_sampler, dataloader, model
     LOG.progress_saver['Train'].log('time', np.round(time.time() - start, 4))
     LOG.tensorboard.add_scalar(tag='Train/time', scalar_value=np.round(time.time() - start, 4), global_step=epoch)
 
+    # Log to wandb
+    if hasattr(LOG, 'log_to_wandb'):
+        # Log training metrics
+        train_metrics = {f"Train/{k}": v for k, v in result_metrics.items()}
+        train_metrics["Train/time"] = np.round(time.time() - start, 4)
+        train_metrics["Train/learning_rate"] = scheduler.get_lr()[0] if opt.scheduler != 'none' else opt.lr
+        
+        LOG.log_to_wandb(train_metrics, step=epoch)
+        
+        # Log gradient metrics
+        LOG.log_to_wandb({
+            "Train/Grad_L2": grad_l2,
+            "Train/Grad_Max": grad_max
+        }, step=epoch)
+        
+        # Log best training metrics
+        LOG.log_best_metrics('Train', step=epoch)
+
     # Learning Rate Scheduling Step
     if opt.scheduler != 'none':
         scheduler.step()

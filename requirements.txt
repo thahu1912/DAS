@@ -16,4 +16,5 @@ Pillow==10.3.0
 ipython==8.24.0
 adjustText==1.0.4
 joblib==1.4.2
-pickleshare==0.7.5  
+pickleshare==0.7.5
+wandb==0.18.0  
