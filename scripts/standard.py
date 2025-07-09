@@ -128,43 +128,6 @@ def main(opt):
     if train_data_sampler and 'criterion' in train_data_sampler.name:
         train_data_sampler.internal_criterion = criterion
 
-    embedding_producer = None
-    if opt.embedding_producer_used:
-        embedding_producer = EmbeddingProducer(
-            num_classes=opt.n_classes, dim=opt.embed_dim, produce_type=opt.produce_type,
-            # for das
-            das_num_produce=opt.das_num_produce, das_normalize=not opt.das_not_normalize,
-            # for dfs
-            das_dfs_num_scale=opt.das_dfs_num_scale,
-            das_dfs_scale_left=opt.das_dfs_scale_left,
-            das_dfs_scale_right=opt.das_dfs_scale_right,
-            # for mts
-            das_mts_num_transformation_bank=opt.das_mts_num_transformation_bank,
-            das_mts_scale=opt.das_mts_scale,
-            # others
-            aux_loss=opt.aux_loss,
-            aux_loss_weight=opt.aux_loss_weight,
-            detach=opt.detach,
-        )
-        print("[EmbeddingProducer] Using EmbeddingProducer for model training")
-        print(embedding_producer)
-
-    hyperbolic_producer = None
-    if opt.hyperbolic_producer_used:
-        hyperbolic_producer = HyperbolicDenselyAnchoredSampling(
-            num_classes=opt.n_classes, dim=opt.embed_dim,
-            num_produce=opt.das_num_produce,
-            normalize=not opt.das_not_normalize,
-            dfs_num_scale=opt.das_dfs_num_scale,
-            dfs_scale_range=(opt.das_dfs_scale_left, opt.das_dfs_scale_right),
-            mts_num_transformation_bank=opt.das_mts_num_transformation_bank,
-            mts_scale=opt.das_mts_scale,
-            hyperbolic_weight=opt.hyperbolic_weight,
-            curvature=opt.curvature,
-            detach=opt.detach,
-        )
-        print("[HyperbolicProducer] Using HyperbolicProducer for model training")
-        print(hyperbolic_producer)
 
     sec = None
     if opt.sec:
