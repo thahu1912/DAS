@@ -178,7 +178,7 @@ def main(opt):
             train_data_sampler.full_storage_update(dataloaders['evaluation'], model, opt.device)
 
         train_one_epoch(opt, epoch, scheduler, train_data_sampler, dataloaders['training'],
-                        model, criterion, optimizer, LOG, embedding_producer=embedding_producer, sec=sec)
+                        model, criterion, optimizer, LOG, embedding_producer=None, sec=sec)
         evaluate(opt, epoch, model, dataloaders, metric_computer, LOG, criterion=criterion)
 
         print('Total Epoch Runtime: {0:4.2f}s'.format(time.time() - epoch_start_time))
