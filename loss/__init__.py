@@ -3,6 +3,7 @@ from loss import angular, snr, histogram, arcface
 from loss import lifted, contrastive, softmax
 from loss import softtriplet, multisimilarity, quadruplet
 from loss import triplet, margin, proxynca, npair, proxyanchor
+from loss import tri_hyp
 
 
 def select(loss, opt, sampling=None):
@@ -21,7 +22,8 @@ def select(loss, opt, sampling=None):
               'softtriplet': softtriplet,
               'arcface': arcface,
               'quadruplet': quadruplet,
-              'adversarial_separation': adversarial_separation}
+              'adversarial_separation': adversarial_separation,
+              'tri_hyp': tri_hyp}
 
     if loss not in losses:
         raise NotImplementedError('Loss {} not implemented!'.format(loss))

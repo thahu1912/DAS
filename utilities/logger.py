@@ -2,12 +2,13 @@ import csv
 import datetime
 import os
 import pickle as pkl
-
+import wandb
 import matplotlib.pyplot as plt
 import numpy as np
 from tensorboardX import SummaryWriter
 
 from utilities.misc import gimme_save_string
+
 
 
 class CSVWriter:
@@ -160,9 +161,90 @@ class LOGGER:
 
         # WandB Init
         self.save_path = check_folder
+        self.wandb_run = None
+
+        try:
+            # Auto-generate project and run names
+            project_name = f"DAS_{opt.dataset.upper()}"
+            run_name = f"{opt.arch}_{opt.loss}_{opt.batch_mining}"
+            if opt.savename and opt.savename != 'group_plus_seed':
+                run_name = f"{run_name}_{opt.savename}"
+                
+            # Initialize wandb
+            self.wandb_run = wandb.init(
+                project=project_name,
+                name=run_name,
+                config={
+                    'dataset': opt.dataset,
+                    'architecture': opt.arch,
+                    'loss': opt.loss,
+                    'batch_mining': opt.batch_mining,
+                    'embed_dim': opt.embed_dim,
+                    'learning_rate': opt.lr,
+                    'batch_size': opt.bs,
+                    'n_epochs': opt.n_epochs,
+                    'optimizer': opt.optim,
+                    'scheduler': opt.scheduler,
+                    'seed': opt.seed,
+                    'evaluation_metrics': opt.evaluation_metrics,
+                    'storage_metrics': opt.storage_metrics,
+                },
+                tags=[opt.dataset, opt.arch, opt.loss, opt.batch_mining],
+                dir=check_folder,
+                reinit=True
+            )
+            print(f"WandB initialized: {self.wandb_run.name}")
+        except Exception as e:
+            print(f"Failed to initialize wandb: {e}")
+            self.wandb_run = None
 
         # Tensorboard Init
         self.tensorboard = SummaryWriter(log_dir=check_folder)
+
+    def log_to_wandb(self, metrics, step=None, prefix=""):
+        """Log metrics to wandb"""
+        if self.wandb_run is not None:
+            try:
+                # Add prefix to metric names if provided
+                if prefix:
+                    metrics = {f"{prefix}/{k}": v for k, v in metrics.items()}
+                
+                # Convert numpy types to Python types for wandb
+                clean_metrics = {}
+                for k, v in metrics.items():
+                    if isinstance(v, np.integer):
+                        clean_metrics[k] = int(v)
+                    elif isinstance(v, np.floating):
+                        clean_metrics[k] = float(v)
+                    elif isinstance(v, np.ndarray):
+                        clean_metrics[k] = v.tolist()
+                    else:
+                        clean_metrics[k] = v
+                
+                wandb.log(clean_metrics, step=step)
+            except Exception as e:
+                print(f"Failed to log to wandb: {e}")
+
+    def log_best_metrics(self, sub_logger, step=None):
+        """Log best metrics for a specific sub_logger"""
+        if self.wandb_run is not None:
+            try:
+                best_metrics = {}
+                for group_name, group_data in self.progress_saver[sub_logger].groups.items():
+                    for metric_name, metric_data in group_data.items():
+                        if metric_data['content']:
+                            # Get the best value (max for most metrics, min for loss)
+                            values = metric_data['content']
+                            if 'loss' in metric_name.lower():
+                                best_value = min(values)
+                            else:
+                                best_value = max(values)
+                            best_metrics[f"best_{metric_name}"] = best_value
+                
+                if best_metrics:
+                    self.log_to_wandb(best_metrics, step=step, prefix=f"best_{sub_logger}")
+            except Exception as e:
+                print(f"Failed to log best metrics to wandb: {e}")
 
     def update(self, *sub_loggers, update_all=False):
         online_content = []
@@ -195,4 +277,10 @@ class LOGGER:
                     online_content.append((name, per_seg_contents[i]))
 
     def __del__(self):
-        self.tensorboard.close()
+        if self.tensorboard:
+            self.tensorboard.close()
+        if self.wandb_run is not None:
+            try:
+                wandb.finish()
+            except:
+                pass

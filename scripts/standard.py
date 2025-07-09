@@ -2,6 +2,7 @@ import os
 import time
 
 import numpy as np
+import torch
 import torch.multiprocessing
 
 import backbone as archs
@@ -34,14 +35,54 @@ def main(opt):
 
     # GPU SETTINGS
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    # if not opt.use_data_parallel:
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(opt.gpu[0])
+    
+    # Check if CUDA is available and set device accordingly
+    if torch.cuda.is_available() and hasattr(opt, 'gpu') and opt.gpu:
+        try:
+            # Validate that all requested GPUs exist
+            available_gpus = torch.cuda.device_count()
+            valid_gpus = []
+            
+            for gpu_id in opt.gpu:
+                if gpu_id >= available_gpus:
+                    print(f"Requested GPU {gpu_id} not available. Available GPUs: {available_gpus}")
+                else:
+                    valid_gpus.append(gpu_id)
+                    print(f"GPU {gpu_id}: {torch.cuda.get_device_name(gpu_id)}")
+            
+            if not valid_gpus:
+                print("No valid GPUs found, falling back to CPU")
+                opt.device = torch.device("cpu")
+                opt.multi_gpu = False
+            elif len(valid_gpus) == 1:
+                # Single GPU setup
+                os.environ["CUDA_VISIBLE_DEVICES"] = str(valid_gpus[0])
+                opt.device = torch.device(f"cuda:{valid_gpus[0]}")
+                opt.multi_gpu = False
+                print(f"Using single CUDA device: {opt.device}")
+            else:
+                # Multi-GPU setup
+                gpu_str = ','.join(map(str, valid_gpus))
+                os.environ["CUDA_VISIBLE_DEVICES"] = gpu_str
+                opt.device = torch.device(f"cuda:{valid_gpus[0]}")  # Primary device
+                opt.multi_gpu = True
+                opt.gpu_ids = valid_gpus
+                print(f"Using multi-GPU setup: {len(valid_gpus)} GPUs")
+                print(f"Primary device: {opt.device}")
+                print(f"All GPU IDs: {valid_gpus}")
+        except Exception as e:
+            print(f"CUDA setup failed: {e}, falling back to CPU")
+            opt.device = torch.device("cpu")
+            opt.multi_gpu = False
+    else:
+        print("CUDA not available, using CPU")
+        opt.device = torch.device("cpu")
+        opt.multi_gpu = False
 
     # SEEDS FOR REPRODUCIBILITY.
     set_seed(opt.seed)
 
     # NETWORK SETUP
-    opt.device = torch.device('cuda')
     model = archs.select(opt.arch, opt)
 
     if opt.fc_lr < 0:
@@ -52,7 +93,13 @@ def main(opt):
         to_optim = [{'params': all_but_fc_params, 'lr': opt.lr, 'weight_decay': opt.decay},
                     {'params': fc_params, 'lr': opt.fc_lr, 'weight_decay': opt.decay}]
 
-    model.to(opt.device)
+    # Multi-GPU setup
+    if hasattr(opt, 'multi_gpu') and opt.multi_gpu and len(opt.gpu_ids) > 1 and hasattr(opt, 'use_data_parallel') and opt.use_data_parallel:
+        print(f"Wrapping model with DataParallel for {len(opt.gpu_ids)} GPUs")
+        model = torch.nn.DataParallel(model, device_ids=opt.gpu_ids)
+        model.to(opt.device)
+    else:
+        model.to(opt.device)
 
     # DATALOADER SETUPS
     dataloaders, train_data_sampler = get_dataloaders(opt, model)
@@ -101,6 +148,23 @@ def main(opt):
         )
         print("[EmbeddingProducer] Using EmbeddingProducer for model training")
         print(embedding_producer)
+
+    hyperbolic_producer = None
+    if opt.hyperbolic_producer_used:
+        hyperbolic_producer = HyperbolicDenselyAnchoredSampling(
+            num_classes=opt.n_classes, dim=opt.embed_dim,
+            num_produce=opt.das_num_produce,
+            normalize=not opt.das_not_normalize,
+            dfs_num_scale=opt.das_dfs_num_scale,
+            dfs_scale_range=(opt.das_dfs_scale_left, opt.das_dfs_scale_right),
+            mts_num_transformation_bank=opt.das_mts_num_transformation_bank,
+            mts_scale=opt.das_mts_scale,
+            hyperbolic_weight=opt.hyperbolic_weight,
+            curvature=opt.curvature,
+            detach=opt.detach,
+        )
+        print("[HyperbolicProducer] Using HyperbolicProducer for model training")
+        print(hyperbolic_producer)
 
     sec = None
     if opt.sec:
@@ -167,3 +231,24 @@ def main(opt):
 
     with open(LOG.save_path + '/training_summary.txt', 'w') as summary_file:
         summary_file.write(summary_text)
+
+    # Log final best statistics to wandb
+    if hasattr(LOG, 'log_to_wandb'):
+        # Log final best metrics for all sub_loggers
+        for sub_logger in LOG.sub_loggers:
+            LOG.log_best_metrics(sub_logger, step=opt.n_epochs)
+        
+        # Log training summary
+        LOG.log_to_wandb({
+            "Training/total_time_minutes": np.round(full_training_time / 60, 2),
+            "Training/total_epochs": opt.n_epochs,
+        }, step=opt.n_epochs)
+        
+        # Log final summary text
+        if hasattr(LOG, 'wandb_run') and LOG.wandb_run is not None:
+            try:
+                import wandb
+                wandb.run.summary["training_summary"] = summary_text
+                print("Final statistics logged to wandb")
+            except ImportError:
+                pass

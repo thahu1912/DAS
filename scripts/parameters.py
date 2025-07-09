@@ -214,6 +214,14 @@ def get_loss_specific_parameters(parser):
     parser.add_argument('--loss_arcface_angular_margin', default=0.5, type=float, help='Angular margin in radians.')
     parser.add_argument('--loss_arcface_feature_scale', default=16, type=float,
                         help='Inverse Temperature for NCA objective.')
+
+    # Tri-Hyp (Hyperbolic Triplet Loss with Graph-Aware Mining)
+    parser.add_argument('--hyperbolic_c', default=1.0, type=float, help='Hyperbolic curvature parameter for Tri-Hyp loss.')
+    parser.add_argument('--k_neighbors', default=5, type=int, help='Number of neighbors for graph construction in Tri-Hyp.')
+    parser.add_argument('--temperature', default=0.1, type=float, help='Temperature for softmax in Tri-Hyp sampling.')
+    parser.add_argument('--label_weight', default=0.5, type=float, help='Weight for label-aware edges in Tri-Hyp.')
+    parser.add_argument('--train_c', action='store_true', help='Make hyperbolic curvature learnable in Tri-Hyp.')
+    
     return parser
 
 

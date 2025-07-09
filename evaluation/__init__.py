@@ -37,13 +37,26 @@ def evaluate(LOG: LOGGER, metric_computer, dataloader, model, opt, eval_types, d
 
     print(full_result_str)
 
+    # Track best metrics for wandb logging
+    best_metrics_this_epoch = {}
+    is_best_epoch = False
+
     for eval_type in eval_types:
         for storage_metric in opt.storage_metrics:
             parent_metric = eval_type + '_{}'.format(storage_metric.split('@')[0])
+            current_value = numeric_metrics[eval_type][storage_metric]
+            
+            # Check if this is the best value so far
             if parent_metric not in LOG.progress_saver[log_key].groups.keys() or \
-                    numeric_metrics[eval_type][storage_metric] > np.max(
+                    current_value > np.max(
                 LOG.progress_saver[log_key].groups[parent_metric][storage_metric]['content']):
                 print('Saved weights for best {}: {}\n'.format(log_key, parent_metric))
+                is_best_epoch = True
+                
+                # Log best metrics to wandb
+                for metric_name, metric_val in numeric_metrics[eval_type].items():
+                    best_metrics_this_epoch[f"best_{metric_name}"] = metric_val
+                
                 set_checkpoint(model, opt, LOG.progress_saver,
                                LOG.save_path + '/checkpoint_{}_{}_{}.pth.tar'.format(log_key, eval_type,
                                                                                      storage_metric),
@@ -54,7 +67,7 @@ def evaluate(LOG: LOGGER, metric_computer, dataloader, model, opt, eval_types, d
                                                                                                    storage_metric),
                                    aux=aux_store)
 
-    # log histogram to tensorboard
+    # Log histogram to tensorboard
     for eval_type in histogram_metrics.keys():
         for eval_metric, hist in histogram_metrics[eval_type].items():
             LOG.tensorboard.add_histogram(tag='%s/%s' % (log_key, eval_type + '_%s' % eval_metric),
@@ -62,17 +75,48 @@ def evaluate(LOG: LOGGER, metric_computer, dataloader, model, opt, eval_types, d
             LOG.tensorboard.add_histogram(tag='%s/%s' % (log_key, eval_type + '_LOG-%s' % eval_metric),
                                           values=np.log(hist) + 20, global_step=opt.epoch)
 
+    # Log metrics to progress saver and tensorboard
     for eval_type in numeric_metrics.keys():
         for eval_metric in numeric_metrics[eval_type].keys():
             parent_metric = eval_type + '_{}'.format(eval_metric.split('@')[0])
-            LOG.progress_saver[log_key].log(eval_metric, numeric_metrics[eval_type][eval_metric], group=parent_metric)
+            metric_val = numeric_metrics[eval_type][eval_metric]
+            
+            LOG.progress_saver[log_key].log(eval_metric, metric_val, group=parent_metric)
             LOG.tensorboard.add_scalar(tag='%s/%s' % (log_key, eval_type + '_%s' % eval_metric),
-                                       scalar_value=numeric_metrics[eval_type][eval_metric], global_step=opt.epoch)
+                                       scalar_value=metric_val, global_step=opt.epoch)
 
         if make_recall_plot:
             recover_closest_standard(extra_infos[eval_type]['features'],
                                      extra_infos[eval_type]['image_paths'],
                                      LOG.prop.save_path + '/sample_recoveries.png')
+
+    # Log to wandb
+    if hasattr(LOG, 'log_to_wandb'):
+        # Log current epoch metrics
+        for eval_type in numeric_metrics.keys():
+            for eval_metric, metric_val in numeric_metrics[eval_type].items():
+                wandb_metric_name = f"{log_key}/{eval_type}_{eval_metric}"
+                LOG.log_to_wandb({wandb_metric_name: metric_val}, step=opt.epoch)
+        
+        # Log best metrics if this is the best epoch
+        if is_best_epoch and best_metrics_this_epoch:
+            LOG.log_to_wandb(best_metrics_this_epoch, step=opt.epoch, prefix=f"best_{log_key}")
+        
+        # Log histogram metrics to wandb
+        for eval_type in histogram_metrics.keys():
+            for eval_metric, hist in histogram_metrics[eval_type].items():
+                try:
+                    import wandb
+                    LOG.log_to_wandb({
+                        f"{log_key}/{eval_type}_{eval_metric}_hist": wandb.Histogram(
+                            np_histogram=(list(hist), list(np.arange(len(hist) + 1)))
+                        ),
+                        f"{log_key}/{eval_type}_LOG-{eval_metric}_hist": wandb.Histogram(
+                            np_histogram=(list(np.log(hist) + 20), list(np.arange(len(hist) + 1)))
+                        )
+                    }, step=opt.epoch)
+                except ImportError:
+                    pass  # wandb not available
 
 
 def evaluate_query_and_gallery(LOG: LOGGER, metric_computer, query, gallery, model, opt, eval_types, device,
@@ -106,13 +150,26 @@ def evaluate_query_and_gallery(LOG: LOGGER, metric_computer, query, gallery, mod
 
     print(full_result_str)
 
+    # Track best metrics for wandb logging
+    best_metrics_this_epoch = {}
+    is_best_epoch = False
+
     for eval_type in eval_types:
         for storage_metric in opt.storage_metrics:
             parent_metric = eval_type + '_{}'.format(storage_metric.split('@')[0])
+            current_value = numeric_metrics[eval_type][storage_metric]
+            
+            # Check if this is the best value so far
             if parent_metric not in LOG.progress_saver[log_key].groups.keys() or \
-                    numeric_metrics[eval_type][storage_metric] > np.max(
+                    current_value > np.max(
                 LOG.progress_saver[log_key].groups[parent_metric][storage_metric]['content']):
                 print('Saved weights for best {}: {}\n'.format(log_key, parent_metric))
+                is_best_epoch = True
+                
+                # Log best metrics to wandb
+                for metric_name, metric_val in numeric_metrics[eval_type].items():
+                    best_metrics_this_epoch[f"best_{metric_name}"] = metric_val
+                
                 set_checkpoint(model, opt, LOG.progress_saver,
                                LOG.save_path + '/checkpoint_{}_{}_{}.pth.tar'.format(log_key, eval_type,
                                                                                      storage_metric),
@@ -123,16 +180,7 @@ def evaluate_query_and_gallery(LOG: LOGGER, metric_computer, query, gallery, mod
                                                                                                    storage_metric),
                                    aux=aux_store)
 
-    if opt.log_online:
-        for eval_type in histogram_metrics.keys():
-            for eval_metric, hist in histogram_metrics[eval_type].items():
-                import wandb
-                wandb.log({log_key + ': ' + eval_type + '_{}'.format(eval_metric): wandb.Histogram(
-                    np_histogram=(list(hist), list(np.arange(len(hist) + 1))))}, step=opt.epoch)
-                wandb.log({log_key + ': ' + eval_type + '_LOG-{}'.format(eval_metric): wandb.Histogram(
-                    np_histogram=(list(np.log(hist) + 20), list(np.arange(len(hist) + 1))))}, step=opt.epoch)
-
-    # log histogram to tensorboard
+    # Log histogram to tensorboard
     for eval_type in histogram_metrics.keys():
         for eval_metric, hist in histogram_metrics[eval_type].items():
             LOG.tensorboard.add_histogram(tag='%s/%s' % (log_key, eval_type + '_%s' % eval_metric),
@@ -140,17 +188,48 @@ def evaluate_query_and_gallery(LOG: LOGGER, metric_computer, query, gallery, mod
             LOG.tensorboard.add_histogram(tag='%s/%s' % (log_key, eval_type + '_LOG-%s' % eval_metric),
                                           values=np.log(hist) + 20, global_step=opt.epoch)
 
+    # Log metrics to progress saver and tensorboard
     for eval_type in numeric_metrics.keys():
         for eval_metric in numeric_metrics[eval_type].keys():
             parent_metric = eval_type + '_{}'.format(eval_metric.split('@')[0])
-            LOG.progress_saver[log_key].log(eval_metric, numeric_metrics[eval_type][eval_metric], group=parent_metric)
+            metric_val = numeric_metrics[eval_type][eval_metric]
+            
+            LOG.progress_saver[log_key].log(eval_metric, metric_val, group=parent_metric)
             LOG.tensorboard.add_scalar(tag='%s/%s' % (log_key, eval_type + '_%s' % eval_metric),
-                                       scalar_value=numeric_metrics[eval_type][eval_metric], global_step=opt.epoch)
+                                       scalar_value=metric_val, global_step=opt.epoch)
 
         if make_recall_plot:
             recover_closest_standard(extra_infos[eval_type]['features'],
                                      extra_infos[eval_type]['image_paths'],
                                      LOG.prop.save_path + '/sample_recoveries.png')
+
+    # Log to wandb
+    if hasattr(LOG, 'log_to_wandb'):
+        # Log current epoch metrics
+        for eval_type in numeric_metrics.keys():
+            for eval_metric, metric_val in numeric_metrics[eval_type].items():
+                wandb_metric_name = f"{log_key}/{eval_type}_{eval_metric}"
+                LOG.log_to_wandb({wandb_metric_name: metric_val}, step=opt.epoch)
+        
+        # Log best metrics if this is the best epoch
+        if is_best_epoch and best_metrics_this_epoch:
+            LOG.log_to_wandb(best_metrics_this_epoch, step=opt.epoch, prefix=f"best_{log_key}")
+        
+        # Log histogram metrics to wandb
+        for eval_type in histogram_metrics.keys():
+            for eval_metric, hist in histogram_metrics[eval_type].items():
+                try:
+                    import wandb
+                    LOG.log_to_wandb({
+                        f"{log_key}/{eval_type}_{eval_metric}_hist": wandb.Histogram(
+                            np_histogram=(list(hist), list(np.arange(len(hist) + 1)))
+                        ),
+                        f"{log_key}/{eval_type}_LOG-{eval_metric}_hist": wandb.Histogram(
+                            np_histogram=(list(np.log(hist) + 20), list(np.arange(len(hist) + 1)))
+                        )
+                    }, step=opt.epoch)
+                except ImportError:
+                    pass  # wandb not available
 
 
 def set_checkpoint(model, opt, progress_saver, save_path, aux=None):
