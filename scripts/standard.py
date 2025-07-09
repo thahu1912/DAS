@@ -10,7 +10,6 @@ import sampling as bmine
 import loss as criteria
 import metric
 from modules.embedding_producer import EmbeddingProducer
-from modules.hyperbolic_poincare import HyperbolicDenselyAnchoredSampling
 from modules.sec import SEC
 from scripts._share import set_seed, get_dataloaders, train_one_epoch, evaluate
 from utilities import logger
